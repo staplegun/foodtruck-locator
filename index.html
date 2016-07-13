@@ -221,16 +221,29 @@
                     ftConfig.pages.push(newPage);
                     Cookies.set('ftConfig', generateCookie(ftConfig));
                     displayStoredPages();
+                    var eventLabel = data.id + ' | ' + data.name;
+                    if (data.location) {
+                        eventLabel += ' | ' + data.location.city + ' | ' + data.location.country;
+                    }
+                    ga('send', 'event', 'Page', 'addPage', eventLabel);
                 }
             };
 
             // remove a stored page
             removeStoredPage = function(pageId) {
+                var page = ftConfig.pages.filter(function(v, i, o) {
+                    return v.id == pageId;
+                });
+                if (page.length > 0) {
+                    page = page[0];
+                }
                 ftConfig.pages = ftConfig.pages.filter(function(v, i, o) {
                     return v.id != pageId;
                 });
                 Cookies.set('ftConfig', generateCookie(ftConfig));
                 displayStoredPages();
+                var eventLabel = data.id + ' | ' + data.name;
+                ga('send', 'event', 'Page', 'removePage', eventLabel);
             };
 
             // display a list of the currently stored keywords
@@ -265,6 +278,7 @@
                     };
                     // empty out form
                     document.getElementById('keywordBox').value = '';
+                    ga('send', 'event', 'Keyword', 'addKeyword', inputText);
                 }
             }
 
@@ -275,11 +289,13 @@
                 });
                 Cookies.set('ftConfig', generateCookie(ftConfig));
                 displayStoredKeywords();
+                ga('send', 'event', 'Keyword', 'removeKeyword', keyword);
             };
 
             // search and display pages - for user to select pages to be stored
             findPages = function() {
                 var inputText = document.getElementById('pageBox').value;
+                ga('send', 'event', 'Page', 'searchPages', inputText);
                 if (inputText && inputText.startsWith("http") && inputText.includes("facebook.com/")) {
                     // Facebook page URL
                     FB.api('/?id=' + inputText + '&fields=id,name,about,location,link,picture,food_styles,price_range', function(response) {
@@ -330,6 +346,7 @@
                     for (var i = 0; i < ftConfig.pages.length; i++) {
                         displayPosts(ftConfig.pages[i]);
                     }
+                    ga('send', 'event', 'Posts', 'displayPosts', ftConfig.pages.length);
                 }
             };
 
@@ -338,33 +355,33 @@
                 var target = document.createElement('div');
                 // page details
                 if (page.name) {
-                  target.innerHTML = formatPageDescription(page);
-                  document.getElementById('postsResponse').appendChild(target);
-                  // posts
-                  FB.api('/' + page.id + '/posts', function(response) {
-                      var list = document.createElement('dl');
-                      list.setAttribute('class', 'dl-horizontal')
-                      for (var i = 0; i < response.data.length; i++) {
-                          var d = new Date(response.data[i].created_time);
-                          var message = response.data[i].message;
-                          // only include post if dated and contains a message
-                          if ((d.getTime() > CUTOFF_EPOCH) && message) {
-                              // format the post's date
-                              var dateDisplay = DAYS[d.getDay()] + " " + d.getDate() + " @ " + ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2);
-                              // highlight keywords in message
-                              for (var j = 0; j < ftConfig.keywords.length; j++) {
-                                  message = highlightKeyword(message, ftConfig.keywords[j]);
-                              }
-                              var dt = document.createElement('dt');
-                              dt.innerHTML = dateDisplay;
-                              list.appendChild(dt);
-                              var dd = document.createElement('dd');
-                              dd.innerHTML = message;
-                              list.appendChild(dd);
-                          }
-                      }
-                      target.appendChild(list);
-                  });
+                    target.innerHTML = formatPageDescription(page);
+                    document.getElementById('postsResponse').appendChild(target);
+                    // posts
+                    FB.api('/' + page.id + '/posts', function(response) {
+                        var list = document.createElement('dl');
+                        list.setAttribute('class', 'dl-horizontal')
+                        for (var i = 0; i < response.data.length; i++) {
+                            var d = new Date(response.data[i].created_time);
+                            var message = response.data[i].message;
+                            // only include post if dated and contains a message
+                            if ((d.getTime() > CUTOFF_EPOCH) && message) {
+                                // format the post's date
+                                var dateDisplay = DAYS[d.getDay()] + " " + d.getDate() + " @ " + ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2);
+                                // highlight keywords in message
+                                for (var j = 0; j < ftConfig.keywords.length; j++) {
+                                    message = highlightKeyword(message, ftConfig.keywords[j]);
+                                }
+                                var dt = document.createElement('dt');
+                                dt.innerHTML = dateDisplay;
+                                list.appendChild(dt);
+                                var dd = document.createElement('dd');
+                                dd.innerHTML = message;
+                                list.appendChild(dd);
+                            }
+                        }
+                        target.appendChild(list);
+                    });
                 }
             };
         };
@@ -442,8 +459,22 @@
                 storeKeyword();
             }
         });
-    </script>
 
+        // ga
+        (function(i, s, o, g, r, a, m) {
+            i['GoogleAnalyticsObject'] = r;
+            i[r] = i[r] || function() {
+                (i[r].q = i[r].q || []).push(arguments)
+            }, i[r].l = 1 * new Date();
+            a = s.createElement(o),
+                m = s.getElementsByTagName(o)[0];
+            a.async = 1;
+            a.src = g;
+            m.parentNode.insertBefore(a, m)
+        })(window, document, 'script', 'https://www.google-analytics.com/analytics.js', 'ga');
+        ga('create', 'UA-80738444-1', 'auto');
+        ga('send', 'pageview');
+    </script>
 </body>
 
 </html>
