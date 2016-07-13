@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<!-- Copyright (c) 2016 @staplegun, released under MIT License https://opensource.org/licenses/MIT  -->
+<html>
+
+<head>
+    <title>Where R U foodtruck?</title>
+    <meta name="description" content="Read the recent 'where we are' posts on Facebook from all your favourite foodtrucks in one place">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/js-cookie/2.1.2/js.cookie.min.js"></script>
+    <link rel='stylesheet' href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css" integrity="sha384-1q8mTJOASx8j1Au+a5WDVnPi2lkFfwwEAa8hDDdjZlpLegxhjVME1fgjWPGmkzs7" crossorigin="anonymous">
+    <link rel='stylesheet' href='https://fonts.googleapis.com/css?family=Exo+2' type='text/css'>
+    <style type='text/css'>
+        body {
+            font-family: 'Exo 2', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h3>WHERE R U FOODTRUCK?</h3>
+
+        <div id="accountInfo" class="text-right"><span style="color: red">You haven't signed-in yet.</span></div>
+        <div id="loginBtn" class="pull-right fb-login-button" data-max-rows="1" data-size="medium" data-show-faces="false" data-auto-logout-link="true"></div>
+
+        <div id="pageStore" class="well" style="margin-top: 20px">
+            <h4>Faves</h4>
+            <div id="pageList"></div>
+            <form>
+                <div class="input-group input-group-sm">
+                    <input id="pageBox" type="text" class="form-control" placeholder="search keywords or Facebook webpage address...">
+                    <span class="input-group-btn">
+                  <button class="btn btn-primary" type="button" onclick="findPages()">Find pages</button>
+                  <button class="btn btn-warning" type="button" onclick="clearFindPages()">Clear</button>
+                </span>
+                </div>
+            </form>
+            <div id="searchResponse"></div>
+        </div>
+
+        <div id="keywordStore" class="well">
+            <h4>Highlighting</h4>
+            <div id="keywordList"></div>
+            <form>
+                <div class="input-group input-group-sm">
+                    <input id="keywordBox" name="keywordBox" type="text" class="form-control" placeholder="new word to highlight...">
+                    <span class="input-group-btn">
+                        <button class="btn btn-primary" type="button" onclick="storeKeyword()">Add word</button>
+                      </span>
+                </div>
+            </form>
+        </div>
+
+        <div id="pagePosts">
+            <div style="padding-bottom: 20px;">
+                <button id="action" class="btn btn-success btn-lg" onclick="displayPagePosts()">SPEAK TO ME</button>
+            </div>
+            <div id="postsResponse"></div>
+        </div>
+
+        <p><em>NB: Your faves are stored as <a href="https://en.wikipedia.org/wiki/HTTP_cookie">cookies</a> in <strong>this</strong> web browser, not in your Facebook account.</em></p>
+        <p><a href="https://github.com/staplegun/foodtruck-locator">About</a></p>
+
+    </div>
+
+    <script type="text/javascript">
+        // only show posts in the last 7 days from now
+        var CUTOFF_EPOCH = new Date() - (7 * 24 * 60 * 60 * 1000);
+        var FACEBOOK_BASE = "https://facebook.com/";
+        var DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        var EMPTY_CONFIG = {
+            pages: [],
+            keywords: []
+        };
+        var WELLINGTON_CONFIG = {
+            // initially just page IDs, but full details will be populated at startup
+            pages: [{
+                // Antojitos Taco Truck
+                id: '1441845949416540',
+            }, {
+                // Beat Kitchen
+                id: "947980361926231",
+            }, {
+                // Nanny's Food Truck
+                id: "1506163522951697",
+            }, {
+                // Onebites Indonesian Gourmet Street Food
+                id: "1521220344796576",
+            }, {
+                // Sichuan:Spice
+                id: "350393588359580",
+            }, {
+                // The Greek Food Truck
+                id: '1508342162761501',
+            }, {
+                // The Hot Wafel
+                id: "152159238298712",
+            }, {
+                id: "1663887507163931",
+                // The Hungry Monkey Wellington
+            }, {
+                id: "2021992721358603",
+                // The Steampunk Food Van
+            }, {
+                // Tuk Tuk Thai Kitchen
+                id: "1291166087566647",
+            }, ],
+            keywords: ["waterfront", "wharf", "kitt", "odlin"],
+        };
+
+        // data store for search results
+        var SearchCache = {};
+
+        // expose globally the Facebook-SDK-dependent display functions
+        var storePage;
+        var removeStoredPage;
+        var displayStoredPages;
+        var storeKeyword;
+        var removeStoredKeyword;
+        var displayStoredKeywords;
+        var findPages;
+        var clearFindPages;
+        var displayPagePosts;
+
+        // get config from cookie, or set default
+        var ftConfig = Cookies.getJSON('ftConfig');
+        if (ftConfig == null) {
+            ftConfig = WELLINGTON_CONFIG;
+            //ftConfig = EMPTY_CONFIG;
+            Cookies.set('ftConfig', generateCookie(ftConfig));
+        }
+
+        // Load the Facebook SDK asynchronously
+        (function(d, s, id) {
+            var js, fjs = d.getElementsByTagName(s)[0];
+            if (d.getElementById(id)) {
+                return;
+            }
+            js = d.createElement(s);
+            js.id = id;
+            js.src = "https://connect.facebook.net/en_US/sdk.js#xfbml=1&version=v2.6&appId=1581080212192558";
+            fjs.parentNode.insertBefore(js, fjs);
+        }(document, 'script', 'facebook-jssdk'))
+
+        // Facebook-SDK-dependent code
+        window.fbAsyncInit = function() {
+            FB.init({
+                appId: '1581080212192558',
+                xfbml: true,
+                version: 'v2.6'
+            });
+
+            // shows currently signed-in user or shows FB login button
+            FB.getLoginStatus(function(response) {
+                if (response.status === 'connected') {
+                    FB.api('/me?fields=name,picture', function(response) {
+                        document.getElementById('accountInfo').innerHTML = ('<img src="' + response.picture.data.url + '" height="25px"> ' + response.name);
+                    });
+                    // once signed-in display the currently stored pages and keywods
+                    displayStoredPages();
+                    displayStoredKeywords();
+                }
+            });
+
+            // display a list of the currently stored pages
+            // retrieves and stores the full details when only an ID is stored
+            displayStoredPages = function() {
+                var target = document.getElementById('pageList');
+                target.innerHTML = '';
+                if (ftConfig && ftConfig.pages) {
+                    var table = document.createElement('div');
+                    target.appendChild(table);
+                    for (var i = 0; i < ftConfig.pages.length; i++) {
+                        var page = ftConfig.pages[i];
+                        if (page.id && page.name && page.picture) {
+                            // have details so display
+                            var html = formatPageDescription(page, 'glyphicon-remove-sign"', 'removeStoredPage', 'darkred');
+                            var row = document.createElement('div');
+                            row.innerHTML = html;
+                            table.appendChild(row);
+                        } else {
+                            // retrieve and store details then display
+                            // NB: responses are received asynchronously so order may vary
+                            FB.api('/?id=' + ftConfig.pages[i].id + '&fields=id,name,about,location,link,picture,food_styles,price_range', function(response) {
+                                if (response && response.id) {
+                                    page = response;
+                                    page.picture = page.picture.data.url;
+                                    SearchCache[page.id] = page;
+                                    storePage(page.id);
+                                    html = formatPageDescription(page, 'glyphicon-remove-sign"', 'removeStoredPage', 'darkred');
+                                    var row = document.createElement('div');
+                                    row.innerHTML = html;
+                                    table.appendChild(row);
+                                }
+                            });
+                        }
+                    }
+                }
+            };
+
+            // store a new page
+            // NB: receives ID rather than object as may be called from a dynamically-created HTML onclick call
+            storePage = function(pageId) {
+                var data = SearchCache[pageId];
+                // check not already stored
+                var index = ftConfig.pages.findIndex(x => x.id === data.id);
+                if (index > -1) {
+                    // overwrite as may have new/full details
+                    ftConfig.pages[index] = data;
+                } else {
+                    // add new page, NB: excluding location (only needed for search results)
+                    var newPage = {
+                        id: data.id,
+                        name: data.name,
+                        link: data.link,
+                        picture: data.picture,
+                        price_range: data.price_range,
+                        food_styles: data.food_styles
+                    };
+                    ftConfig.pages.push(newPage);
+                    Cookies.set('ftConfig', generateCookie(ftConfig));
+                    displayStoredPages();
+                }
+            };
+
+            // remove a stored page
+            removeStoredPage = function(pageId) {
+                ftConfig.pages = ftConfig.pages.filter(function(v, i, o) {
+                    return v.id != pageId;
+                });
+                Cookies.set('ftConfig', generateCookie(ftConfig));
+                displayStoredPages();
+            };
+
+            // display a list of the currently stored keywords
+            displayStoredKeywords = function() {
+                var target = document.getElementById('keywordList');
+                target.innerHTML = '';
+                if (ftConfig && ftConfig.keywords) {
+                    var html = '';
+                    for (var i = 0; i < ftConfig.keywords.length; i++) {
+                        var keyword = ftConfig.keywords[i];
+                        html += '<span class="label label-primary" style="padding-top: 5px"><span onclick="removeStoredKeyword(\'' + keyword +
+                            '\')"><span class="glyphicon glyphicon-remove-sign" style="cursor: pointer; cursor: hand;"></span></span> ' + keyword + '</span> ';
+                    }
+                    var div = document.createElement('div');
+                    div.innerHTML = html;
+                    target.appendChild(div);
+                }
+            };
+
+            // store a new keyword
+            storeKeyword = function() {
+                var inputText = document.getElementById('keywordBox').value;
+                if (inputText) {
+                    // check not already stored
+                    var found = ftConfig.keywords.filter(function(v, i, o) {
+                        return v === inputText;
+                    });
+                    if (found.length < 1) {
+                        ftConfig.keywords.push(inputText);
+                        Cookies.set('ftConfig', generateCookie(ftConfig));
+                        displayStoredKeywords();
+                    };
+                    // empty out form
+                    document.getElementById('keywordBox').value = '';
+                }
+            }
+
+            // remove a stored keyword
+            removeStoredKeyword = function(keyword) {
+                ftConfig.keywords = ftConfig.keywords.filter(function(v, i, o) {
+                    return v != keyword;
+                });
+                Cookies.set('ftConfig', generateCookie(ftConfig));
+                displayStoredKeywords();
+            };
+
+            // search and display pages - for user to select pages to be stored
+            findPages = function() {
+                var inputText = document.getElementById('pageBox').value;
+                if (inputText && inputText.startsWith("http") && inputText.includes("facebook.com/")) {
+                    // Facebook page URL
+                    FB.api('/?id=' + inputText + '&fields=id,name,about,location,link,picture,food_styles,price_range', function(response) {
+                        SearchCache = {};
+                        // store page in search results cache (so storePage can access it)
+                        var page = response;
+                        page.picture = page.picture.data.url;
+                        SearchCache[page.id] = page;
+                        storePage(page.id);
+                    });
+                } else {
+                    // keyword search
+                    FB.api('/search?q=' + inputText + '&type=page&limit=10&fields=id,name,about,location,link,picture,food_styles,price_range', function(response) {
+                        SearchCache = {};
+                        var table = document.createElement('div');
+                        for (var i = 0; i < response.data.length; i++) {
+                            // store page in search results cache
+                            var page = response.data[i];
+                            page.picture = page.picture.data.url;
+                            SearchCache[page.id] = page;
+                            // display
+                            var html = formatPageDescription(page, 'glyphicon-plus-sign"', 'storePage', 'green');
+                            var row = document.createElement('div');
+                            row.innerHTML = html;
+                            table.appendChild(row);
+                        }
+                        var target = document.getElementById('searchResponse');
+                        target.innerHTML = '';
+                        target.appendChild(table);
+                    });
+                }
+            };
+
+            // clear the page search area
+            clearFindPages = function() {
+                // empty out response list
+                var target = document.getElementById('searchResponse');
+                target.innerHTML = '';
+                // empty out form
+                document.getElementById('pageBox').value = '';
+            };
+
+            // main action - retrieve and display the posts for all the stored pages
+            displayPagePosts = function() {
+                var target = document.getElementById('postsResponse');
+                target.innerHTML = '';
+                if (ftConfig && ftConfig.pages) {
+                    for (var i = 0; i < ftConfig.pages.length; i++) {
+                        displayPosts(ftConfig.pages[i]);
+                    }
+                }
+            };
+
+            // display description and posts for one page
+            function displayPosts(page) {
+                var target = document.createElement('div');
+                // page details
+                if (page.name) {
+                  target.innerHTML = formatPageDescription(page);
+                  document.getElementById('postsResponse').appendChild(target);
+                  // posts
+                  FB.api('/' + page.id + '/posts', function(response) {
+                      var list = document.createElement('dl');
+                      list.setAttribute('class', 'dl-horizontal')
+                      for (var i = 0; i < response.data.length; i++) {
+                          var d = new Date(response.data[i].created_time);
+                          var message = response.data[i].message;
+                          // only include post if dated and contains a message
+                          if ((d.getTime() > CUTOFF_EPOCH) && message) {
+                              // format the post's date
+                              var dateDisplay = DAYS[d.getDay()] + " " + d.getDate() + " @ " + ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2);
+                              // highlight keywords in message
+                              for (var j = 0; j < ftConfig.keywords.length; j++) {
+                                  message = highlightKeyword(message, ftConfig.keywords[j]);
+                              }
+                              var dt = document.createElement('dt');
+                              dt.innerHTML = dateDisplay;
+                              list.appendChild(dt);
+                              var dd = document.createElement('dd');
+                              dd.innerHTML = message;
+                              list.appendChild(dd);
+                          }
+                      }
+                      target.appendChild(list);
+                  });
+                }
+            };
+        };
+
+        // returns HTML (a container row) to display a single page's description, with optional action button
+        // @buttonGlyphicon: icon class name from jQuery, eg. "glyphicon-remove-sign"
+        // @action: function name to call on click, eg. "storePage" - the selected page's ID will be passed as the only parameter
+        //         (the called function uses the ID to retrieves the page object from the SearchCache)
+        // @color: color of the action button
+        function formatPageDescription(page, buttonGlyphicon, action, color) {
+            if (!color) {
+                color = 'darkgrey';
+            }
+            // location
+            var location = "";
+            if (page.location && page.location.city) {
+                location = '- ' + page.location.city;
+            } else if (page.location && page.location.country) {
+                location = '- ' + page.location.country;
+            }
+            // restaurant styles and price range
+            var styles = page.food_styles ? page.food_styles.join(', ') : '';
+            var price = page.price_range ? page.price_range : '';
+
+            var html = '<div class="row" style="margin-top: 7px;">';
+            if (buttonGlyphicon && action) {
+                html += '<div class="col-xs-1 text-right" onclick="' + action + '(' + page.id + ')"><span class="glyphicon ' + buttonGlyphicon + '" style="color: ' + color + '; cursor: pointer; cursor: hand; font-size:1.5em;"></span></div> ';
+            }
+            html += '<div class="col-xs-10" media">';
+            html += '<div class="media-left"><a href="' + page.link + '"><img class="media-object" src="' + page.picture + '" alt="' + page.name + '"></a></div>';
+            html += '<div class="media-body"><a href="' + page.link + '">' + page.name + '</a> ' + location + '<br /><em>' + price + ' ' + styles + '</em></div>';
+            html += '</div>';
+
+            html += '</div>';
+            return html;
+        };
+
+        // highlight all occurences of the specified keyword in the supplied text
+        function highlightKeyword(text, keyword) {
+            if (text && keyword) {
+                var re = new RegExp(keyword, "ig");
+                if (text.match(re)) {
+                    text = '<mark>' + text.replace(re, '<strong>$&</strong>') + '</mark>';
+                }
+                return text;
+                //return text.replace(re, '<mark>$&</mark>');
+            }
+            return text;
+        };
+
+        // strips a config object down to fit inside a cookie
+        function generateCookie(config) {
+            var cookie = {};
+            cookie.keywords = config.keywords;
+            cookie.pages = [];
+            // store pages as an array of objects containing just an ID
+            for (var i = 0; i < config.pages.length; i++) {
+                cookie.pages.push({
+                    id: config.pages[i].id
+                });
+            }
+            return cookie;
+        };
+
+        // add listeners for pressing <enter> in forms (buttons already have onClick)
+        document.getElementById('pageBox').addEventListener('keypress', function(event) {
+            if (event.keyCode == 13) {
+                event.preventDefault();
+                findPages();
+            }
+        });
+        document.getElementById('keywordBox').addEventListener('keypress', function(event) {
+            if (event.keyCode == 13) {
+                event.preventDefault();
+                storeKeyword();
+            }
+        });
+    </script>
+
+</body>
+
+</html>
