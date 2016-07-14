@@ -21,8 +21,8 @@
     <div class="container">
         <h3>WHERE R U FOODTRUCK?</h3>
 
-        <div id="accountInfo" class="text-right"><span style="color: red">You haven't signed-in yet.</span></div>
-        <div id="loginBtn" class="pull-right fb-login-button" data-max-rows="1" data-size="medium" data-show-faces="false" data-auto-logout-link="true"></div>
+        <div id="accountInfo" class="text-right"><span style="color: red">You haven't logged-in yet.</span></div>
+        <fb:login-button id="loginBtn" class="pull-right fb-login-button" scope="public_profile" data-max-rows="1" data-size="medium" data-show-faces="false" data-auto-logout-link="true" onlogin="checkLoginStatus();"></fb:login-button>
 
         <div id="pageStore" class="well" style="margin-top: 20px">
             <h4>Faves</h4>
@@ -113,6 +113,7 @@
         var SearchCache = {};
 
         // expose globally the Facebook-SDK-dependent display functions
+        var checkLoginStatus;
         var storePage;
         var removeStoredPage;
         var displayStoredPages;
@@ -153,15 +154,27 @@
 
             // shows currently signed-in user or shows FB login button
             FB.getLoginStatus(function(response) {
-                if (response.status === 'connected') {
-                    FB.api('/me?fields=name,picture', function(response) {
-                        document.getElementById('accountInfo').innerHTML = ('<img src="' + response.picture.data.url + '" height="25px"> ' + response.name);
-                    });
-                    // once signed-in display the currently stored pages and keywods
-                    displayStoredPages();
-                    displayStoredKeywords();
-                }
+              initDisplay(response);
             });
+
+            checkLoginStatus = function() {
+              FB.getLoginStatus(function(response) {
+                initDisplay(response);
+              });
+            };
+
+            function initDisplay(response) {
+              if (response.status === 'connected') {
+                  FB.api('/me?fields=name,picture', function(response) {
+                      document.getElementById('accountInfo').innerHTML = ('<img src="' + response.picture.data.url + '" height="25px"> ' + response.name);
+                  });
+                  // once signed-in display the currently stored pages and keywods
+                  displayStoredPages();
+                  displayStoredKeywords();
+              } else {
+                document.getElementById('accountInfo').innerHTML = ('<span style="color: red">You haven&apos;t logged-in yet.</span>');
+              };
+            };
 
             // display a list of the currently stored pages
             // retrieves and stores the full details when only an ID is stored
@@ -346,7 +359,9 @@
                     for (var i = 0; i < ftConfig.pages.length; i++) {
                         displayPosts(ftConfig.pages[i]);
                     }
-                    ga('send', 'event', 'Posts', 'displayPosts', ftConfig.pages.length);
+                    ga('send', 'pageview', location.pathname + '/view-posts');
+                    var eventLabel = 'View posts: ' + ftConfig.pages.length + ' pages, ' + ftConfig.keywords.length + ' keywords';
+                    ga('send', 'event', 'Posts', 'viewPosts', eventLabel, ftConfig.pages.length);
                 }
             };
 
@@ -427,7 +442,6 @@
                     text = '<mark>' + text.replace(re, '<strong>$&</strong>') + '</mark>';
                 }
                 return text;
-                //return text.replace(re, '<mark>$&</mark>');
             }
             return text;
         };
